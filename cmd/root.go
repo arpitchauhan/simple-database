@@ -28,5 +28,6 @@ func Execute() {
 	}
 }
 
-func init() {}
-
+func init() {
+	rootCmd.PersistentFlags().String("database", "database.csv", "database contents file")
+}

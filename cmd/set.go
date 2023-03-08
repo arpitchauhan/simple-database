@@ -1,28 +1,18 @@
-/*
-Copyright © 2023 NAME HERE <EMAIL ADDRESS>
-*/package cmd
+package cmd
 
 import (
 	"encoding/csv"
 	"errors"
-	"log"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-func check(err error) {
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
 // setCmd represents the set command
 var setCmd = &cobra.Command{
 	Use:   "set",
-	Short: "Set the value of a variable",
-	Long:  "Set the value of a variable",
+	Short: "Add a key-value pair to the database",
+	Long:  "Add a key-value pair to the database",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
 			return errors.New("requires exactly 2 args")
@@ -30,33 +20,29 @@ var setCmd = &cobra.Command{
 
 		key := args[0]
 
-		if len(strings.TrimSpace(key)) == 0 {
-			return errors.New("key cannot be empty")
-		}
-
-		return nil
+		return validateKey(key)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		filepath := rootCmd.PersistentFlags().Lookup("database").Value.String()
 		db, err := os.OpenFile(
-			rootCmd.PersistentFlags().Lookup("database").Value.String(),
+			filepath,
 			os.O_CREATE|os.O_APPEND|os.O_WRONLY,
 			0o644,
 		)
-
-		check(err)
+		cobra.CheckErr(err)
+		defer db.Close()
 
 		csvWriter := csv.NewWriter(db)
 		err = csvWriter.Write(args)
 
-		check(err)
+		cobra.CheckErr(err)
 		csvWriter.Flush()
 
 		err = csvWriter.Error()
-		check(err)
+		cobra.CheckErr(err)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(setCmd)
-	rootCmd.PersistentFlags().String("database", "database.csv", "database contents file")
 }

@@ -1,11 +1,10 @@
-/*
-Copyright © 2023 NAME HERE <EMAIL ADDRESS>
-
-*/
 package cmd
 
 import (
-	"fmt"
+	"encoding/csv"
+	"errors"
+	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -13,28 +12,55 @@ import (
 // getCmd represents the get command
 var getCmd = &cobra.Command{
 	Use:   "get",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+	Short: "Get the latest value set for a key",
+	Long: "Get the latest value set for a key",
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return errors.New("requires exactly one argument")
+		}
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("get called")
+		key := args[0]
+		return validateKey(key)
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		filepath := rootCmd.PersistentFlags().Lookup("database").Value.String()
+		db, err := os.Open(filepath)
+
+		cobra.CheckErr(err)
+		defer db.Close()
+
+		lookupKey := args[0]
+
+		csvReader := csv.NewReader(db)
+		keyFound := false
+		var answer string
+
+		for {
+			record, err := csvReader.Read()
+
+			if err == io.EOF {
+				break
+			} else {
+				cobra.CheckErr(err)
+			}
+
+			key := record[0]
+
+			if key == lookupKey {
+				keyFound = true
+				answer = record[1]
+			}
+		}
+
+		if keyFound {
+			cmd.Printf("Answer: %s", answer)
+			return nil
+		}	else {
+			return errors.New("the key is not present in the database")
+		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(getCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// getCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// getCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

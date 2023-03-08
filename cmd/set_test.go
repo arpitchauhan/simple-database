@@ -3,15 +3,15 @@ package cmd
 import (
 	"os"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 const testDatabaseFile = "database_test.csv"
 
-func TestSetValidInput(t *testing.T) {
+func init() {
 	setTestDatabaseFile()
+}
 
+func TestSetValidInput(t *testing.T) {
 	type testCase struct {
 		input [][]string
 		want  string
@@ -37,14 +37,13 @@ func TestSetValidInput(t *testing.T) {
 
 	for _, tc := range cases {
 		for _, kv := range tc.input {
-			err := execute(t, setCmd, kv)
+			err := executeSetCmd(t, kv)
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
 
 		dbContents, err := os.ReadFile(testDatabaseFile)
-
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,8 +61,6 @@ func TestSetValidInput(t *testing.T) {
 }
 
 func TestSetInvalidInput(t *testing.T) {
-	setTestDatabaseFile()
-
 	type testCase struct {
 		input     []string
 		wantError string
@@ -84,7 +81,7 @@ func TestSetInvalidInput(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		err := execute(t, setCmd, tc.input)
+		err := executeSetCmd(t, tc.input)
 
 		if err == nil {
 			t.Fatal("got no error, want one")
@@ -98,11 +95,11 @@ func TestSetInvalidInput(t *testing.T) {
 	}
 }
 
-func execute(t *testing.T, c *cobra.Command, args []string) error {
+func executeSetCmd(t *testing.T, args []string) error {
 	t.Helper()
 
 	os.Args = append([]string{"", "set"}, args...)
-	err := c.Execute()
+	err := setCmd.Execute()
 
 	return err
 }
