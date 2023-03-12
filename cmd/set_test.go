@@ -94,8 +94,18 @@ func TestSetInvalidInput(t *testing.T) {
 		os.Remove(testDatabaseFile)
 	}
 }
+func BenchmarkSet(b *testing.B) {
+	b.Cleanup(deleteDatabase)
+	for n := 0; n < b.N; n++ {
+		err := executeSetCmd(b, []string{"key", "value"})
 
-func executeSetCmd(t *testing.T, args []string) error {
+		if err != nil {
+			b.Fatalf("Error: %s", err)
+		}
+	}
+}
+
+func executeSetCmd(t testing.TB, args []string) error {
 	t.Helper()
 
 	os.Args = append([]string{"", "set"}, args...)

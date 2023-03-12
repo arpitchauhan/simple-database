@@ -3,12 +3,16 @@ package cmd
 import (
 	"bytes"
 	"encoding/csv"
+	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"testing"
+	"time"
 )
 
 func init() {
+	rand.Seed(time.Now().UnixNano())
 	setTestDatabaseFile()
 }
 
@@ -122,8 +126,42 @@ func TestGetInvalidInput(t *testing.T) {
 		}
 	}
 }
+func BenchmarkGet(b *testing.B) {
+	b.Cleanup(deleteDatabase)
 
-func executeGetCmd(t *testing.T, args []string) (string, error) {
+	keyValuePairs := [][]string{}
+	var testKeys []string
+
+	rowsCount := 100000
+
+	for i := 0; i < rowsCount; i++ {
+		key := randStringBytes(5)
+
+		if i == 0 || i == rowsCount / 2 || i == rowsCount - 1 {
+			testKeys = append(testKeys, key)
+		}
+
+		value := randStringBytes(15)
+		keyValuePairs = append(keyValuePairs, []string{key, value})
+	}
+
+	createDatabase(keyValuePairs)
+
+	b.ResetTimer()
+
+	for i, testKey := range testKeys {
+		b.Run(fmt.Sprintf("key_%d", i), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				_, err := executeGetCmd(b, []string{testKey})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func executeGetCmd(t testing.TB, args []string) (string, error) {
 	t.Helper()
 
 	b := bytes.NewBufferString("")
@@ -137,4 +175,14 @@ func executeGetCmd(t *testing.T, args []string) (string, error) {
 
 	out, err := ioutil.ReadAll(b)
 	return string(out), err
+}
+
+func randStringBytes(n int) string {
+	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+	}
+	return string(b)
 }
