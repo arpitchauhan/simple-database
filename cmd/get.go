@@ -1,63 +1,39 @@
 package cmd
 
 import (
-	"encoding/csv"
-	"errors"
-	"io"
-	"os"
-
+	"github.com/arpitchauhan/simple-database/client"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+var getValueForKey = client.GetValueForKey
 
 // getCmd represents the get command
 var getCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Get the latest value set for a key",
 	Long: "Get the latest value set for a key",
-	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return errors.New("requires exactly one argument")
-		}
-
-		key := args[0]
-		return validateKey(key)
-	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		filepath := rootCmd.PersistentFlags().Lookup("database").Value.String()
-		db, err := os.Open(filepath)
-
-		cobra.CheckErr(err)
-		defer db.Close()
-
+	Args: cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
 		lookupKey := args[0]
+		answer, err := getValueForKey(lookupKey)
 
-		csvReader := csv.NewReader(db)
-		keyFound := false
-		var answer string
+		if err != nil {
+			status, _ := status.FromError(err)
 
-		for {
-			record, err := csvReader.Read()
-
-			if err == io.EOF {
-				break
-			} else {
-				cobra.CheckErr(err)
+			if status.Code() == codes.Unavailable {
+				cmd.Printf("Error: the server is not running")
+				return
+			} else if status.Code() == codes.NotFound {
+				cmd.Printf("Error: the key was not found")
+				return
 			}
 
-			key := record[0]
-
-			if key == lookupKey {
-				keyFound = true
-				answer = record[1]
-			}
+			cobra.CheckErr(err)
 		}
 
-		if keyFound {
-			cmd.Printf("Answer: %s", answer)
-			return nil
-		}	else {
-			return errors.New("the key is not present in the database")
-		}
+		cmd.Printf("Answer: %s", answer)
 	},
 }
 

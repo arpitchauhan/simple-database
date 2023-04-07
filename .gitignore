@@ -4,7 +4,10 @@
 *.dll
 *.so
 *.dylib
-database
+
+# Binaries
+simple-database
+server/server
 
 # Test binary, built with `go test -c`
 *.test
