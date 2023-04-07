@@ -2,187 +2,83 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/csv"
-	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"os"
 	"testing"
-	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-	setTestDatabaseFile()
-}
-
-func createDatabase(keyValuePairs [][]string) error {
-	db, err := os.Create(testDatabaseFile)
-	if err != nil {
-		return err
-	}
-
-	defer db.Close()
-
-	csvWriter := csv.NewWriter(db)
-
-	for _, kv := range keyValuePairs {
-		err = csvWriter.Write(kv)
-		if err != nil {
-			return err
-		}
-	}
-
-	csvWriter.Flush()
-	err = csvWriter.Error()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func deleteDatabase() {
-	os.Remove(testDatabaseFile)
-}
-
-func TestGetValidInput(t *testing.T) {
-	t.Cleanup(deleteDatabase)
-
-	type testCase struct {
-		databaseContents [][]string
-		inputKey string
-		expectedResult string
-	}
-
-	cases := []testCase{
+func Test_Get(t *testing.T) {
+	tests := []struct {
+		name         string
+		key          string
+		receivedCode codes.Code
+		want         string
+	}{
 		{
-			databaseContents: [][]string{{"key", "value"}},
-			inputKey: "key",
-			expectedResult: "Answer: value",
+			name:         "Value returned for key",
+			key:          "key",
+			receivedCode: codes.OK,
+			want:         "Answer: value",
 		},
 		{
-			databaseContents: [][]string{{"key", "value1"}, {"key", "value2"}},
-			inputKey: "key",
-			expectedResult: "Answer: value2",
+			name:         "Server not running",
+			receivedCode: codes.Unavailable,
+			want:         "Error: the server is not running",
 		},
 		{
-			databaseContents: [][]string{{"k", "v"}, {"k2", "v2"}},
-			inputKey: "k2",
-			expectedResult: "Answer: v2",
+			name:         "Key not present on server",
+			receivedCode: codes.NotFound,
+			want:         "Error: the key was not found",
 		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receivedKey string
 
-	for _, tc := range cases {
-		err := createDatabase(tc.databaseContents)
-		if err != nil {
-			t.Fatal("Failed to create database")
-		}
+			// override the fn used to get key from server
+			getValueForKey = func(k string) (string, error) {
+				receivedKey = k
 
-		output, err := executeGetCmd(t, []string{tc.inputKey})
-
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if output != tc.expectedResult {
-			t.Errorf("Want: %s, got: %s", tc.expectedResult, output)
-		}
-
-		deleteDatabase()
-	}
-}
-
-func TestGetInvalidInput(t *testing.T) {
-	type testCase struct {
-		input []string
-		expectedResult string
-	}
-
-	cases := []testCase{
-		{
-			input: []string{""},
-			expectedResult: "Error: key cannot be empty",
-		},
-		{
-			input: []string{"arg1", "arg2"},
-			expectedResult: "Error: requires exactly one argument",
-		},
-		{
-			input: []string{"nonexistent_key"},
-			expectedResult: "The key is not present in the database",
-		},
-	}
-
-	t.Cleanup(deleteDatabase)
-	createDatabase([][]string{})
-	for _, tc := range cases {
-		_, err := executeGetCmd(t, tc.input)
-
-		if err == nil {
-			if err.Error() != tc.expectedResult {
-				t.Errorf("Want: %s, got: %s", tc.expectedResult, err)
+				return "value", status.Error(tt.receivedCode, "")
 			}
-		}
-	}
-}
-func BenchmarkGet(b *testing.B) {
-	b.Cleanup(deleteDatabase)
 
-	keyValuePairs := [][]string{}
-	var testKeys []string
+			out := executeGetCmd(t, []string{tt.key})
 
-	rowsCount := 100000
+			if receivedKey != tt.key {
+				t.Errorf(
+					"Server called with wrong key, got = %v, want = %v",
+					receivedKey,
+					tt.key,
+				)
+				return
+			}
 
-	for i := 0; i < rowsCount; i++ {
-		key := randStringBytes(5)
-
-		if i == 0 || i == rowsCount / 2 || i == rowsCount - 1 {
-			testKeys = append(testKeys, key)
-		}
-
-		value := randStringBytes(15)
-		keyValuePairs = append(keyValuePairs, []string{key, value})
-	}
-
-	createDatabase(keyValuePairs)
-
-	b.ResetTimer()
-
-	for i, testKey := range testKeys {
-		b.Run(fmt.Sprintf("key_%d", i), func(b *testing.B) {
-			for n := 0; n < b.N; n++ {
-				_, err := executeGetCmd(b, []string{testKey})
-				if err != nil {
-					b.Fatal(err)
-				}
+			if out != tt.want {
+				t.Errorf("got = %v, want = %v", out, tt.want)
+				return
 			}
 		})
 	}
 }
 
-func executeGetCmd(t testing.TB, args []string) (string, error) {
+func executeGetCmd(t *testing.T, args []string) string {
 	t.Helper()
 
 	b := bytes.NewBufferString("")
 	getCmd.SetOut(b)
 	os.Args = append([]string{"", "get"}, args...)
 	err := getCmd.Execute()
-
 	if err != nil {
-		return "", err
+		t.Fatalf("Error executing command: %v", err)
 	}
 
 	out, err := ioutil.ReadAll(b)
-	return string(out), err
-}
-
-func randStringBytes(n int) string {
-	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+	if err != nil {
+		t.Fatalf("Error reading output of command: %v", err)
 	}
-	return string(b)
+
+	return string(out)
 }

@@ -29,5 +29,4 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().String("database", "database.csv", "database contents file")
 }

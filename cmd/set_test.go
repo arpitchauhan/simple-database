@@ -1,119 +1,82 @@
 package cmd
 
 import (
+	"bytes"
+	"io/ioutil"
 	"os"
 	"testing"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-const testDatabaseFile = "database_test.csv"
-
-func init() {
-	setTestDatabaseFile()
-}
-
-func TestSetValidInput(t *testing.T) {
-	type testCase struct {
-		input [][]string
-		want  string
-	}
-	cases := []testCase{
+func Test_Set(t *testing.T) {
+	tests := []struct {
+		name         string
+		key          string
+		value        string
+		receivedCode codes.Code
+		want         string
+	}{
 		{
-			input: [][]string{{"key", "value"}},
-			want:  "key,value\n",
+			name:         "Successful operation",
+			receivedCode: codes.OK,
+			want:         "Successful!",
 		},
 		{
-			input: [][]string{{"key1", "value1"}, {"key2", "value2"}},
-			want:  "key1,value1\nkey2,value2\n",
-		},
-		{
-			input: [][]string{{"key", "value"}, {"key", "value2"}},
-			want:  "key,value\nkey,value2\n",
-		},
-		{
-			input: [][]string{{"key", ""}},
-			want:  "key,\n",
+			name:         "Server not running",
+			receivedCode: codes.Unavailable,
+			want:         "Error: the server is not running",
 		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receivedKey, receivedValue string
 
-	for _, tc := range cases {
-		for _, kv := range tc.input {
-			err := executeSetCmd(t, kv)
-			if err != nil {
-				t.Fatal(err)
+			// override the fn used to get key from server
+			setValueForKey = func(k, v string) error {
+				receivedKey = k
+				receivedValue = v
+
+				return status.Error(tt.receivedCode, "")
 			}
-		}
 
-		dbContents, err := os.ReadFile(testDatabaseFile)
-		if err != nil {
-			t.Fatal(err)
-		}
+			out := executeSetCmd(t, []string{tt.key, tt.value})
 
-		if string(dbContents) != tc.want {
-			t.Errorf(
-				"The content of database is not as expected. Want: %s, got: %s",
-				tc.want,
-				dbContents,
-			)
-		}
+			if receivedKey != tt.key || receivedValue != tt.value {
+				t.Errorf(
+					"Server called with wrong key-value pair, got: %v and %v, want: %v and %v",
+					receivedKey,
+					receivedValue,
+					tt.key,
+					tt.value,
+				)
+				return
+			}
 
-		os.Remove(testDatabaseFile)
+			if out != tt.want {
+				t.Errorf("got = %v, want = %v", out, tt.want)
+				return
+			}
+		})
 	}
 }
 
-func TestSetInvalidInput(t *testing.T) {
-	type testCase struct {
-		input     []string
-		wantError string
-	}
-
-	cases := []testCase{
-		{
-			input:     []string{"", "value"},
-			wantError: "key cannot be empty",
-		},
-		{
-			input:     []string{"  ", "value"},
-			wantError: "key cannot be empty",
-		},
-		{
-			input:     []string{"value"},
-			wantError: "requires exactly 2 args",
-		},
-	}
-	for _, tc := range cases {
-		err := executeSetCmd(t, tc.input)
-
-		if err == nil {
-			t.Fatal("got no error, want one")
-		}
-
-		if err.Error() != tc.wantError {
-			t.Errorf("got error \"%s\", want \"%s\"", err.Error(), tc.wantError)
-		}
-
-		os.Remove(testDatabaseFile)
-	}
-}
-func BenchmarkSet(b *testing.B) {
-	b.Cleanup(deleteDatabase)
-	for n := 0; n < b.N; n++ {
-		err := executeSetCmd(b, []string{"key", "value"})
-
-		if err != nil {
-			b.Fatalf("Error: %s", err)
-		}
-	}
-}
-
-func executeSetCmd(t testing.TB, args []string) error {
+func executeSetCmd(t *testing.T, args []string) string {
 	t.Helper()
 
+	b := bytes.NewBufferString("")
+	setCmd.SetOut(b)
 	os.Args = append([]string{"", "set"}, args...)
 	err := setCmd.Execute()
+	if err != nil {
+		t.Fatalf("Error executing command: %v", err)
+	}
 
-	return err
-}
+	out, err := ioutil.ReadAll(b)
+	if err != nil {
+		t.Fatalf("Error reading output of command: %v", err)
+	}
 
-func setTestDatabaseFile() {
-	rootCmd.PersistentFlags().Set("database", testDatabaseFile)
+	return string(out)
 }
