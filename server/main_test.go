@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"math/rand"
 	"os"
 	"testing"
@@ -225,6 +227,8 @@ func BenchmarkGet(b *testing.B) {
 
 	s := getServer()
 
+	log.SetOutput(ioutil.Discard) // skip logging
+
 	for i, testKey := range testKeys {
 		b.Run(fmt.Sprintf("key_%d", i), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
@@ -242,8 +246,11 @@ func BenchmarkSet(b *testing.B) {
 	b.Cleanup(deleteDatabase)
 	s := getServer()
 
+	log.SetOutput(ioutil.Discard) // skip logging
+
 	for n := 0; n < b.N; n++ {
 		setRequest := &pb.SetRequest{Key: "k", Value: "v"}
+		// fmt.Println(n)
 		_, err := s.Set(context.Background(), setRequest)
 		if err != nil {
 			b.Fatalf("Error: %s", err)
@@ -252,10 +259,13 @@ func BenchmarkSet(b *testing.B) {
 }
 
 func getServer() *server {
-	return &server{
+	db := &database{filepath: testDatabasePath, initialized: false}
+	s := &server{
 		UnimplementedDatabaseServer: pb.UnimplementedDatabaseServer{},
-		databasePath:                testDatabasePath,
+		db:                          db,
 	}
+	s.initialize()
+	return s
 }
 
 func createDatabase(keyValuePairs [][]string) error {
